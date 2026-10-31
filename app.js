@@ -3,6 +3,7 @@ const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD = 0.12;
 const BARS = 4;
 const STEPS_PER_BAR = 16;
+const SAMPLE_RATE = 48000;
 
 const recipes = [
   { id:"piano-trumpet", name:"Piano → Trumpet", blurb:"Piano calls on 1 and 3. Trumpet answers on 2 and 4." },
@@ -134,13 +135,13 @@ function ensureCtx() {
   if (ctx.state === "suspended") ctx.resume();
 }
 
-function playSample(key, when, rate = 1, gain = 0.4, chair = "kit", duration = null) {
-  const b = buffers[key];
-  if (!b || !ctx) return null;
-  const src = ctx.createBufferSource();
+function playSample(key, when, rate = 1, gain = 0.4, chair = "kit", duration = null, audioCtx = ctx, bufs = buffers, gains = chairGains, sources = activeSources) {
+  const b = bufs[key];
+  if (!b || !audioCtx) return null;
+  const src = audioCtx.createBufferSource();
   src.buffer = b;
   src.playbackRate.value = rate;
-  const g = ctx.createGain();
+  const g = audioCtx.createGain();
   g.gain.setValueAtTime(0, when);
   g.gain.linearRampToValueAtTime(gain, when + 0.01);
   if (duration) {
@@ -150,15 +151,17 @@ function playSample(key, when, rate = 1, gain = 0.4, chair = "kit", duration = n
     g.gain.linearRampToValueAtTime(0, when + 0.4);
   }
   src.connect(g);
-  g.connect(chairGains[chair] || master);
+  g.connect(gains[chair] || master);
   src.start(when);
   if (duration) src.stop(when + duration + 0.05);
-  activeSources.push(src);
-  src.onended = () => { const i = activeSources.indexOf(src); if (i>=0) activeSources.splice(i,1); };
+  if (sources) {
+    sources.push(src);
+    src.onended = () => { const i = sources.indexOf(src); if (i>=0) sources.splice(i,1); };
+  }
   return src;
 }
 
-function scheduleStep(step, time) {
+function scheduleStep(step, time, audioCtx = ctx, bufs = buffers, gains = chairGains, sources = activeSources) {
   const bar = Math.floor(step / STEPS_PER_BAR) % BARS;
   const s = step % STEPS_PER_BAR;
   const off = keyOffset();
@@ -166,61 +169,61 @@ function scheduleStep(step, time) {
   const rec = state.recipe.id;
   const stepDur = 60 / state.bpm / 4;
 
-  if (s % 4 === 0) playSample("kick", time, 1, 0.7 * state.gains.kit, "kit");
-  if (s === 8) playSample("snare", time, 1, 0.5 * state.gains.kit, "kit");
-  if (s % 2 === 0) playSample("hat", time, 1, 0.15 * state.gains.kit, "kit");
+  if (s % 4 === 0) playSample("kick", time, 1, 0.7 * state.gains.kit, "kit", null, audioCtx, bufs, gains, sources);
+  if (s === 8) playSample("snare", time, 1, 0.5 * state.gains.kit, "kit", null, audioCtx, bufs, gains, sources);
+  if (s % 2 === 0) playSample("hat", time, 1, 0.15 * state.gains.kit, "kit", null, audioCtx, bufs, gains, sources);
 
   const isCall = bar % 2 === 0;
   if (rec === "piano-trumpet") {
     if (isCall && s === 0) {
       const p = closestSample("piano", chord[0]);
-      if (p) playSample("piano-"+p.path, time, p.rate, 0.5 * state.gains.piano, "piano", stepDur*4);
+      if (p) playSample("piano-"+p.path, time, p.rate, 0.5 * state.gains.piano, "piano", stepDur*4, audioCtx, bufs, gains, sources);
     }
     if (!isCall && s === 0) {
       const t = closestSample("trumpet", chord[2] + 12);
-      if (t) playSample("trumpet-"+t.path, time, t.rate, 0.45 * state.gains.trumpet, "trumpet", stepDur*8);
+      if (t) playSample("trumpet-"+t.path, time, t.rate, 0.45 * state.gains.trumpet, "trumpet", stepDur*8, audioCtx, bufs, gains, sources);
     }
   } else if (rec === "nylon-violin") {
     if (isCall && (s === 0 || s === 4 || s === 8 || s === 12)) {
       const g = closestSample("guitar", chord[Math.floor(s/4) % 3]);
-      if (g) playSample("guitar-"+g.path, time, g.rate, 0.4 * state.gains.guitar, "guitar");
+      if (g) playSample("guitar-"+g.path, time, g.rate, 0.4 * state.gains.guitar, "guitar", null, audioCtx, bufs, gains, sources);
     }
     if (!isCall && s === 0) {
       const v = closestSample("violin", chord[1]);
-      if (v) playSample("violin-"+v.path, time, v.rate, 0.4 * state.gains.violin, "violin", stepDur*16);
+      if (v) playSample("violin-"+v.path, time, v.rate, 0.4 * state.gains.violin, "violin", stepDur*16, audioCtx, bufs, gains, sources);
     }
   } else if (rec === "bass-answer") {
     if (isCall && s === 0) {
       const p = closestSample("piano", chord[0]);
-      if (p) playSample("piano-"+p.path, time, p.rate, 0.35 * state.gains.piano, "piano");
+      if (p) playSample("piano-"+p.path, time, p.rate, 0.35 * state.gains.piano, "piano", null, audioCtx, bufs, gains, sources);
     }
     if (!isCall && (s === 0 || s === 8)) {
       const b = closestSample("bass", chord[0] - 24);
-      if (b) playSample("bass-"+b.path, time, b.rate, 0.5 * state.gains.bass, "bass");
+      if (b) playSample("bass-"+b.path, time, b.rate, 0.5 * state.gains.bass, "bass", null, audioCtx, bufs, gains, sources);
     }
   } else if (rec === "kit-call") {
-    if (isCall && s === 0) playSample("kick", time, 1, 0.8 * state.gains.kit, "kit");
-    if (isCall && s === 8) playSample("snare", time, 1, 0.6 * state.gains.kit, "kit");
+    if (isCall && s === 0) playSample("kick", time, 1, 0.8 * state.gains.kit, "kit", null, audioCtx, bufs, gains, sources);
+    if (isCall && s === 8) playSample("snare", time, 1, 0.6 * state.gains.kit, "kit", null, audioCtx, bufs, gains, sources);
     if (!isCall && s === 0) {
       const t = closestSample("trumpet", chord[2]);
-      if (t) playSample("trumpet-"+t.path, time, t.rate, 0.4 * state.gains.trumpet, "trumpet");
+      if (t) playSample("trumpet-"+t.path, time, t.rate, 0.4 * state.gains.trumpet, "trumpet", null, audioCtx, bufs, gains, sources);
       const v = closestSample("violin", chord[1]);
-      if (v) playSample("violin-"+v.path, time, v.rate, 0.35 * state.gains.violin, "violin");
+      if (v) playSample("violin-"+v.path, time, v.rate, 0.35 * state.gains.violin, "violin", null, audioCtx, bufs, gains, sources);
     }
   } else {
     if (s === 0) {
       if (bar === 0) {
         const p = closestSample("piano", chord[0]);
-        if (p) playSample("piano-"+p.path, time, p.rate, 0.45 * state.gains.piano, "piano");
+        if (p) playSample("piano-"+p.path, time, p.rate, 0.45 * state.gains.piano, "piano", null, audioCtx, bufs, gains, sources);
       } else if (bar === 1) {
         const t = closestSample("trumpet", chord[2]);
-        if (t) playSample("trumpet-"+t.path, time, t.rate, 0.4 * state.gains.trumpet, "trumpet");
+        if (t) playSample("trumpet-"+t.path, time, t.rate, 0.4 * state.gains.trumpet, "trumpet", null, audioCtx, bufs, gains, sources);
       } else if (bar === 2) {
         const g = closestSample("guitar", chord[1]);
-        if (g) playSample("guitar-"+g.path, time, g.rate, 0.4 * state.gains.guitar, "guitar");
+        if (g) playSample("guitar-"+g.path, time, g.rate, 0.4 * state.gains.guitar, "guitar", null, audioCtx, bufs, gains, sources);
       } else {
         const b = closestSample("bass", chord[0]-24);
-        if (b) playSample("bass-"+b.path, time, b.rate, 0.5 * state.gains.bass, "bass");
+        if (b) playSample("bass-"+b.path, time, b.rate, 0.5 * state.gains.bass, "bass", null, audioCtx, bufs, gains, sources);
       }
     }
   }
@@ -324,15 +327,242 @@ function loadState() {
   } catch(e) {}
 }
 
+async function decodeAll(offlineCtx) {
+  const offBuffers = {};
+  for (const [key, ab] of Object.entries(rawBuffers)) {
+    try {
+      offBuffers[key] = await offlineCtx.decodeAudioData(ab.slice(0));
+    } catch (e) {
+      console.warn("decode fail", key);
+    }
+  }
+  return offBuffers;
+}
+
+function makeOfflineGraph(offlineCtx, offBuffers) {
+  const offMaster = offlineCtx.createGain();
+  const offComp = offlineCtx.createDynamicsCompressor();
+  offComp.threshold.value = -1;
+  offComp.knee.value = 0;
+  offComp.ratio.value = 20;
+  offComp.attack.value = 0.003;
+  offComp.release.value = 0.25;
+  offMaster.connect(offComp);
+  offComp.connect(offlineCtx.destination);
+  const offGains = {};
+  for (const chair of ["piano","guitar","bass","trumpet","violin","kit"]) {
+    offGains[chair] = offlineCtx.createGain();
+    offGains[chair].gain.value = state.gains[chair];
+    offGains[chair].connect(offMaster);
+  }
+  return { offGains };
+}
+
 async function exportWav() {
-  ensureCtx();
-  const sampleRate = 48000;
-  const length = Math.round(BARS * 4 * 60 / state.bpm * sampleRate);
-  alert("WAV export: " + length + " samples at " + state.bpm + " BPM. Full offline render with tail fold pending full implementation.");
+  if (Object.keys(rawBuffers).length === 0) {
+    document.getElementById("status").textContent = "Load samples first (tap Play)";
+    return;
+  }
+  const status = document.getElementById("status");
+  status.textContent = "Rendering WAV…";
+  const sampleRate = SAMPLE_RATE;
+  const mainLength = Math.round(BARS * 4 * 60 / state.bpm * sampleRate);
+  const tailSec = 1.5;
+  const tailSamples = Math.round(tailSec * sampleRate);
+  const totalLength = mainLength + tailSamples;
+  const offline = new OfflineAudioContext(2, totalLength, sampleRate);
+  const offBuffers = await decodeAll(offline);
+  const { offGains } = makeOfflineGraph(offline, offBuffers);
+  let t = 0;
+  const stepDur = 60 / state.bpm / 4;
+  const totalSteps = BARS * STEPS_PER_BAR;
+  for (let i = 0; i < totalSteps; i++) {
+    scheduleStep(i, t, offline, offBuffers, offGains, null);
+    t += stepDur;
+  }
+  const rendered = await offline.startRendering();
+  // Fold tail onto start for seamless loop
+  const out = offline.createBuffer(2, mainLength, sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const src = rendered.getChannelData(ch);
+    const dst = out.getChannelData(ch);
+    for (let i = 0; i < mainLength; i++) dst[i] = src[i];
+    for (let i = 0; i < tailSamples && i < mainLength; i++) {
+      dst[i] += src[mainLength + i] * 0.85; // gentle fold
+    }
+  }
+  // Peak normalize to -1 dBFS
+  let peak = 0;
+  for (let ch = 0; ch < 2; ch++) {
+    const data = out.getChannelData(ch);
+    for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i]));
+  }
+  const target = Math.pow(10, -1 / 20); // -1 dBFS
+  const scale = peak > target ? target / peak : 1;
+  if (scale < 1) {
+    for (let ch = 0; ch < 2; ch++) {
+      const data = out.getChannelData(ch);
+      for (let i = 0; i < data.length; i++) data[i] *= scale;
+    }
+  }
+  const blob = encodeWav24(out, sampleRate);
+  const name = `answerfour-${state.recipe.id}-${state.bpm}bpm-${state.key}.wav`;
+  downloadBlob(blob, name);
+  status.textContent = `WAV ready · ${mainLength} samples · first downbeat at 0`;
+}
+
+function encodeWav24(buffer, rate) {
+  const numCh = buffer.numberOfChannels;
+  const len = buffer.length;
+  const bytesPerSample = 3;
+  const dataSize = len * numCh * bytesPerSample;
+  const bufferSize = 44 + dataSize;
+  const view = new DataView(new ArrayBuffer(bufferSize));
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, bufferSize - 8, true);
+  writeString(view, 8, "WAVE");
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numCh, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * numCh * bytesPerSample, true);
+  view.setUint16(32, numCh * bytesPerSample, true);
+  view.setUint16(34, 24, true);
+  writeString(view, 36, "data");
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  for (let i = 0; i < len; i++) {
+    for (let ch = 0; ch < numCh; ch++) {
+      let sample = Math.max(-1, Math.min(1, buffer.getChannelData(ch)[i]));
+      sample = sample < 0 ? sample * 0x800000 : sample * 0x7FFFFF;
+      const s = Math.round(sample);
+      view.setUint8(offset, s & 0xFF);
+      view.setUint8(offset + 1, (s >> 8) & 0xFF);
+      view.setUint8(offset + 2, (s >> 16) & 0xFF);
+      offset += 3;
+    }
+  }
+  return new Blob([view], { type: "audio/wav" });
+}
+
+function writeString(view, offset, string) {
+  for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+}
+
+function downloadBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function collectMidiEvents() {
+  const tracks = {
+    kit: [], piano: [], guitar: [], bass: [], trumpet: [], violin: []
+  };
+  let t = 0;
+  const stepDur = 60 / state.bpm / 4;
+  const ppq = 480;
+  const ticksPerStep = Math.round(ppq * 4 * stepDur / (60 / state.bpm)); // approx
+  // Better: use absolute ticks from time
+  const ticksPerSecond = (state.bpm / 60) * ppq;
+  for (let step = 0; step < BARS * STEPS_PER_BAR; step++) {
+    const bar = Math.floor(step / STEPS_PER_BAR) % BARS;
+    const s = step % STEPS_PER_BAR;
+    const timeSec = t;
+    const tick = Math.round(timeSec * ticksPerSecond);
+    const off = keyOffset();
+    const chord = parseChord(state.chords[bar] || "C", off);
+    const rec = state.recipe.id;
+    const isCall = bar % 2 === 0;
+    // Simplified note collection matching scheduleStep intent
+    if (s % 4 === 0) tracks.kit.push({ tick, note: 36, vel: 100, dur: 0.1 }); // kick
+    if (s === 8) tracks.kit.push({ tick, note: 38, vel: 90, dur: 0.1 });
+    if (s % 2 === 0) tracks.kit.push({ tick, note: 42, vel: 40, dur: 0.05 });
+    if (rec === "piano-trumpet") {
+      if (isCall && s === 0) tracks.piano.push({ tick, note: chord[0], vel: 80, dur: stepDur * 4 });
+      if (!isCall && s === 0) tracks.trumpet.push({ tick, note: chord[2] + 12, vel: 75, dur: stepDur * 8 });
+    } else if (rec === "nylon-violin") {
+      if (isCall && (s % 4 === 0)) tracks.guitar.push({ tick, note: chord[Math.floor(s/4) % 3], vel: 70, dur: 0.2 });
+      if (!isCall && s === 0) tracks.violin.push({ tick, note: chord[1], vel: 70, dur: stepDur * 16 });
+    } else if (rec === "bass-answer") {
+      if (isCall && s === 0) tracks.piano.push({ tick, note: chord[0], vel: 60, dur: 0.3 });
+      if (!isCall && (s === 0 || s === 8)) tracks.bass.push({ tick, note: chord[0] - 24, vel: 80, dur: 0.3 });
+    } else if (rec === "kit-call") {
+      if (!isCall && s === 0) {
+        tracks.trumpet.push({ tick, note: chord[2], vel: 70, dur: 0.4 });
+        tracks.violin.push({ tick, note: chord[1], vel: 65, dur: 0.4 });
+      }
+    } else {
+      if (s === 0) {
+        if (bar === 0) tracks.piano.push({ tick, note: chord[0], vel: 75, dur: 0.4 });
+        else if (bar === 1) tracks.trumpet.push({ tick, note: chord[2], vel: 70, dur: 0.4 });
+        else if (bar === 2) tracks.guitar.push({ tick, note: chord[1], vel: 70, dur: 0.4 });
+        else tracks.bass.push({ tick, note: chord[0] - 24, vel: 80, dur: 0.4 });
+      }
+    }
+    t += stepDur;
+  }
+  return tracks;
 }
 
 function exportMidi() {
-  alert("MIDI export: one track per chair, tempo and 4/4 set. Full SMF writer pending.");
+  const tracks = collectMidiEvents();
+  const blob = buildMidi(tracks, state.bpm);
+  const name = `answerfour-${state.recipe.id}-${state.bpm}bpm-${state.key}.mid`;
+  downloadBlob(blob, name);
+  document.getElementById("status").textContent = "MIDI ready · one track per chair · 4/4 · tempo set";
+}
+
+function buildMidi(tracks, bpm) {
+  // Minimal multi-track SMF (format 1)
+  const ppq = 480;
+  const header = [0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x01, 0x00, 0x06, (ppq >> 8) & 0xFF, ppq & 0xFF]; // 6 tracks
+  const trackNames = ["Kit", "Piano", "Guitar", "Bass", "Trumpet", "Violin"];
+  const trackKeys = ["kit", "piano", "guitar", "bass", "trumpet", "violin"];
+  let body = [];
+  trackKeys.forEach((key, ti) => {
+    const events = tracks[key] || [];
+    const track = [];
+    // Track name
+    const name = trackNames[ti];
+    track.push(0x00, 0xFF, 0x03, name.length, ...Array.from(name).map(c => c.charCodeAt(0)));
+    // Tempo (only on first track)
+    if (ti === 0) {
+      const us = Math.round(60000000 / bpm);
+      track.push(0x00, 0xFF, 0x51, 0x03, (us >> 16) & 0xFF, (us >> 8) & 0xFF, us & 0xFF);
+      // Time sig 4/4
+      track.push(0x00, 0xFF, 0x58, 0x04, 0x04, 0x02, 0x18, 0x08);
+    }
+    events.sort((a, b) => a.tick - b.tick);
+    let lastTick = 0;
+    events.forEach(ev => {
+      const delta = Math.max(0, ev.tick - lastTick);
+      track.push(...varInt(delta), 0x90 + ti, ev.note & 0x7F, Math.min(127, ev.vel)); // note on
+      const offTick = ev.tick + Math.round((ev.dur || 0.2) * (bpm / 60) * ppq);
+      const offDelta = Math.max(1, offTick - ev.tick);
+      track.push(...varInt(offDelta), 0x80 + ti, ev.note & 0x7F, 0x00); // note off
+      lastTick = offTick;
+    });
+    track.push(0x00, 0xFF, 0x2F, 0x00); // end of track
+    const len = track.length;
+    body.push(0x4D, 0x54, 0x72, 0x6B, (len >> 24) & 0xFF, (len >> 16) & 0xFF, (len >> 8) & 0xFF, len & 0xFF, ...track);
+  });
+  return new Blob([new Uint8Array([...header, ...body])], { type: "audio/midi" });
+}
+
+function varInt(value) {
+  const bytes = [];
+  let v = value;
+  bytes.push(v & 0x7F);
+  v >>= 7;
+  while (v) {
+    bytes.push((v & 0x7F) | 0x80);
+    v >>= 7;
+  }
+  return bytes.reverse();
 }
 
 document.getElementById("play").onclick = () => { ensureCtx(); start(); };
