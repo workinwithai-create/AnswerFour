@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AnswerFour — four-bar answer desk</title>
+  <meta name="description" content="Four live-instrument bars that answer your call. Piano or nylon calls; trumpet, violin or bass replies so the loop finally has conversation." />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+<main>
+  <p class="eyebrow">WorkinWithAI · live chairs</p>
+  <h1>AnswerFour</h1>
+  <p class="lead">Four-bar answer desk. Stuck loops have a call and nothing answers. Session players write four live bars: piano or nylon calls, trumpet or violin or bass answers, so the section has conversation and can finish or hand off. Live FluidR3 samples only. Not a lift. Not a tag. Not a key change.</p>
+  <p class="status" id="status">Tap to start audio…</p>
+  <div class="controls">
+    <label>BPM <input type="number" id="bpm" min="60" max="180" value="96"></label>
+    <label>Key <select id="key"><option>C</option><option>C#</option><option>D</option><option>D#</option><option>E</option><option>F</option><option>F#</option><option>G</option><option>G#</option><option>A</option><option>A#</option><option>B</option></select></label>
+    <label>Chords <input type="text" id="chords" value="Am F C G" placeholder="Am F C G"></label>
+  </div>
+  <p class="eyebrow">Recipe</p>
+  <div class="row" id="recipes"></div>
+  <p class="eyebrow">Form · call-answer · 4 bars</p>
+  <div class="bars" id="bars"></div>
+  <div class="mix">
+    <label>Piano <input type="range" id="gainPiano" min="0" max="1" step="0.01" value="0.6"></label>
+    <label>Guitar <input type="range" id="gainGuitar" min="0" max="1" step="0.01" value="0.5"></label>
+    <label>Bass <input type="range" id="gainBass" min="0" max="1" step="0.01" value="0.55"></label>
+    <label>Trumpet <input type="range" id="gainTrumpet" min="0" max="1" step="0.01" value="0.45"></label>
+    <label>Violin <input type="range" id="gainViolin" min="0" max="1" step="0.01" value="0.4"></label>
+    <label>Kit <input type="range" id="gainKit" min="0" max="1" step="0.01" value="0.5"></label>
+  </div>
+  <h2>Punch list</h2>
+  <pre id="punch"></pre>
+  <p class="note">iOS silent switch mutes Web Audio. Exports are grid-locked 48 kHz 24-bit stereo WAV + MIDI. First downbeat at sample 0.</p>
+</main>
+<div class="dock">
+  <button id="play">Play</button>
+  <button class="ghost" id="stop">Stop</button>
+  <button id="exportWav">Export WAV</button>
+  <button id="exportMid">Export MIDI</button>
+  <button class="ghost" id="copy">Copy punch</button>
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
