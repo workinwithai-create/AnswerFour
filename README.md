@@ -6,6 +6,8 @@ Your loop has a call and nothing answers. AnswerFour writes four live bars: pian
 
 Live chairs only. Samples pinned to PreEight commit SHA. Not a lift. Not a tag. Not a key change. Distinct from TagFour, LiftTwo, PreEight, AfterHook, EndEight, LastHook.
 
+**Exports:** Grid-locked 48 kHz 24-bit stereo WAV (exact bar length, first downbeat at sample 0, tail folded for seamless loop, peak ≤ -1 dBFS) + matching multi-track MIDI (one chair per track, tempo and 4/4). Files named `answerfour-recipe-<bpm>bpm-<key>.{wav,mid}`.
+
 ## Pricing
 
 One-time $19 on Gumroad (or $9 add-on inside Forge Pass $24/mo). This is a desk, not a recurring studio. Sell next to other WorkinWithAI desks on Gumroad + a pinned X demo.
